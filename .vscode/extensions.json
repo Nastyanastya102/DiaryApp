@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "EditorConfig.editorconfig",
+    "msjsdiag.debugger-for-chrome",
+    "waderyan.gitblame"
+  ]
+}

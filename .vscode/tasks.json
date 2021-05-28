@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "command": "npm",
+  "tasks": [
+    {
+      "label": "start",
+      "type": "shell",
+      "args": [
+        "start"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "storybook",
+      "type": "shell",
+      "args": [
+        "run",
+        "storybook"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "args": [
+        "run",
+        "test"
+      ],
+      "problemMatcher": [],
+      "group": "test"
+    }
+  ]
+}

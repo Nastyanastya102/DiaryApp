@@ -1,0 +1,128 @@
+{
+  "extends": [
+    "plugin:import/errors",
+    "plugin:import/warnings",
+    // put this last to allow it to override
+    "prettier",
+    "prettier/react",
+    "plugin:cypress/recommended",
+    "eslint:recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "env": {
+    "browser": true,
+    "es6": true,
+    "jest": true,
+    "node": true
+  },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "arrowFunctions": true,
+      "blockBindings": true,
+      "classes": true,
+      "defaultParams": true,
+      "destructuring": true,
+      "forOf": true,
+      "generators": false,
+      "modules": true,
+      "objectLiteralComputedProperties": true,
+      "objectLiteralDuplicateProperties": false,
+      "objectLiteralShorthandProperties": true,
+      "objectLiteralShorthandMethods": true,
+      "spread": true,
+      "superInFunctions": true,
+      "templateStrings": true,
+      "jsx": true
+    }
+  },
+  "plugins": [
+    "import",
+    "react",
+    "react-native",
+    "prettier",
+    "@typescript-eslint"
+  ],
+  "settings": {
+    "import/resolver": {
+      "reactnative": {},
+      "babel-module": {}
+    },
+    "react": {
+      "version": "detect" // React version. "detect" automatically picks the version you have installed.
+    },
+    // React Native uses getters to export all its component, causing eslint to be unable
+    // statically resolve them.
+    "import/ignore": ["react-native"]
+  },
+  "rules": {
+    "prettier/prettier": [
+      "error",
+      {
+        "trailingComma": "es5",
+        "singleQuote": true
+      }
+    ],
+    "brace-style": [
+      0,
+      "stroustrup"
+    ],
+    "consistent-return": 2,
+    "curly": [
+      2,
+      "multi-line"
+    ],
+    "dot-notation": 2,
+    "no-else-return": 2,
+    "no-eq-null": 2,
+    "no-floating-decimal": 2,
+    "no-param-reassign": 2,
+    "no-self-compare": 2,
+    "no-shadow": 0,
+    "no-throw-literal": 2,
+    "no-underscore-dangle": 0,
+    "strict": 0,
+    "vars-on-top": 0,
+    //    These are covered by Prettier™ defaults:
+    //    "eol-last": 2,
+    //    "indent": ["error", 2, { "SwitchCase": 1 }],
+    //    "quotes": [2, "single"],
+    //    "wrap-iife": 2,
+    //    "semi": [2, "always"],
+    //    "no-trailing-spaces": 2,
+    //    "keyword-spacing": 2,
+    //    "space-before-blocks": 2,
+    //    "space-before-function-paren": [2, "never"],
+    //    "space-infix-ops": 2,
+    "cypress/no-unnecessary-waiting": "off",
+    "spaced-comment": [
+      "error",
+      "always",
+      {
+        "exceptions": [
+          "*"
+        ]
+      }
+    ],
+    // Error on unused or undefined variables
+    "no-undef": "error",
+    "no-unused-vars": "error",
+    "no-var": "warn",
+    // Allow default imports for interoperability with CommonJS
+    "import/default": "off",
+    // Allow deafult export to use the same name as a named export
+    "import/no-named-as-default": "off",
+
+    // React specific rules
+    "react/jsx-no-undef": "error",
+    "react/jsx-uses-react": "error",
+    "react/jsx-uses-vars": "error",
+    "react/no-deprecated": "warn",
+    "react/no-direct-mutation-state": "error",
+    "react/react-in-jsx-scope": "error",
+    "react-native/no-unused-styles": "error",
+    "flowtype/define-flow-type": 1
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "editor.formatOnSave": false,
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/node_modules/**": true
+  },
+  "flow.useNPMPackagedFlow": true,
+  "javascript.validate.enable": false,
+  "json.schemas": [
+    {
+      "fileMatch": [
+        ".eslintrc"
+      ],
+      "url": "http://json.schemastore.org/eslintrc"
+    },
+    {
+      "fileMatch": [
+        "jsconfig.json"
+      ],
+      "url": "http://json.schemastore.org/jsconfig"
+    },
+    {
+      "fileMatch": [
+        ".babelrc"
+      ],
+      "url": "http://json.schemastore.org/babelrc"
+    },
+    {
+      "fileMatch": [
+        ".prettierrc"
+      ],
+      "url": "http://json.schemastore.org/prettierrc"
+    }
+  ],
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  }
+  /**
+   * Since people want sligthtly different exlude patterns, this
+   * was moved out of workspace settings. Below is a recommended
+   * set of exludes for your user settings file.
+  "files.exclude": {
+    ".vscode/": true,
+    "**\/.DS_Store": true,
+    "**\/.git": true,
+    "**\/*.lock": true,
+    "android/.gradle": true,
+    "android/.idea": true,
+    "android/app/build/": true,
+    "android/build": true,
+    "android/gradle": true,
+    "android/keystores": true,
+    "arc-extensions/": true,
+    "artifacts": true,
+    "coverage/": true,
+    "flow-typed": true,
+    "ios/build": true,
+    "ios/Pods": true,
+    "ios/vendor": true,
+    "main.jsbundle": true,
+    "node_modules/": true,
+    "src/i18n/_extractedMessages": true
+  },
+  */
+}
