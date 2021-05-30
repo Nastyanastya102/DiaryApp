@@ -1,0 +1,671 @@
+version: 2.1
+
+# Do not change these parameters since it will then trigger release and upload to appstore and google play
+# Used by circle api to do releases.
+parameters:
+  release-ios:
+    type: boolean
+    default: false
+  release-android:
+    type: boolean
+    default: false
+
+aliases:
+  - &workspace_root ~/project
+  - &ios_root ~/project/ios
+  - &bundle_config_path ~/project/ios/.bundle
+
+  - &not_web_regex /^([^/]+\/)?web\/.*/
+  - &app_branch_regex /develop$|^(app|dependabot|release)\/.+/
+  - &app_rc_branch_regex /^release\/.+/
+  - &app_uk_branch_regex /develop$|^(app-uk|dependabot|release-uk)\/.+/
+  - &cypress_branch /develop$|^(cypress)\/.+/
+
+  - &npm_cache_key v5-npm-cache-{{ checksum "yarn.lock" }}
+  - &gem_cache_key v5-gem-cache-{{ checksum "ios/Gemfile.lock" }}
+  - &pod_cache_key v10-pod-cache-{{ checksum "ios/Podfile.lock" }}
+  - &pod_specs_cache_key v9_podspecs_cache-{{ checksum "ios/Podfile.lock" }}
+  - &ipa_cache_key v3_ipa_cache-{{ checksum "ios/MinDoktor.xcodeproj/project.pbxproj" }}-{{ checksum "ios/Podfile.lock" }}-{{ checksum "ios/MinDoktor/SE/Info-SE.plist"}}-{{ checksum "ios/MinDoktor/AppDelegate.m"}}-{{ checksum "ios/fastlane/devices.txt"}}
+  - &ipa_cache_key_uk v5_ipa_cache-{{ checksum "ios/MinDoktor.xcodeproj/project.pbxproj" }}-{{ checksum "ios/Podfile.lock" }}-{{ checksum "ios/MinDoktor/UK/Info-UK.plist"}}-{{ checksum "ios/MinDoktor/AppDelegate.m"}}-{{ checksum "ios/fastlane/devices.txt"}}
+  - &jest_cache_key v2_jest_cache-{{ checksum "yarn.lock" }}
+
+  - &set_ruby_version
+      name: Set Ruby Version
+      command:  echo "ruby-2.4" > ~/.ruby-version
+
+  - &step_attach_workspace
+      attach_workspace:
+        at: ~/project
+
+  - &ruby-machine
+      - image: circleci/ruby:2.4
+
+  - &ruby_config
+      docker:
+        - image: circleci/ruby:2.4
+      shell: /bin/bash --login -eo pipefail
+      environment:
+        BUNDLE_APP_CONFIG: *bundle_config_path
+
+  - &node_config
+      docker:
+      - image: circleci/node:12
+      shell: /bin/bash --login -eo pipefail
+
+  - &mac_config
+      macos:
+        xcode: "12.4.0"
+      shell: /bin/bash --login -eo pipefail
+
+  - &step_setup_config
+      name: Setup config
+      command: ./scripts/setup-config.sh se test
+
+  - &step_fastlane_build_beta
+      name: Fastlane Build Beta
+      command: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle exec fastlane ios build_or_bundle archive_name:mindoktor ipa_name:mindoktor market:se
+
+  - &step_fastlane_build_and_release_to_testflight
+      name: Fastlane Build Beta
+      command: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle exec fastlane ios ci_release market:se scheme:mindoktor submit:false auto_release:false
+
+  - &step_fastlane_build_and_release_to_play_store
+      name: Fastlane Build Beta
+      command: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle exec fastlane android release market:se
+
+  - &step_fastlane_build_beta_uk
+      name: Fastlane Build Beta
+      command: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle exec fastlane ios build_or_bundle archive_name:doclyuk ipa_name:doclyuk market:uk
+
+  - &step_build_android
+      name: Build Android
+      command: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle exec fastlane android build market:se variant:test clean:true output_name:mindoktor
+
+  - &step_build_android_uk
+      name: Build Android
+      command: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle exec fastlane android build market:uk variant:test clean:true output_name:doclyuk
+
+  - &step_store_google_play_key
+      name: Store the google play key
+      command: echo $GOOGLE_PLAY_KEY > ./android/google-play-key.json
+
+  - &step_remove_google_play_key
+      name: Remove google play key
+      command: rm -rf ./android/google-play-key.json
+
+jobs:
+  jest:
+    <<: *node_config
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *step_setup_config
+      - restore_cache:
+          key: *jest_cache_key
+      - run:
+          name: Setup env for UK
+          command: yarn setup-config uk local
+      - run:
+          name: Run tests
+          command: ./node_modules/.bin/jest --bail --ci --silent --runInBand
+      - save_cache:
+          key: *jest_cache_key
+          paths:
+            - ./.jest-cache
+
+  lint:
+    <<: *node_config
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *step_setup_config
+      - run:
+          name: Lint i18n files
+          command: node tools/i18n_files_checker/check-i18n-files.js
+      - run:
+          name: Lint
+          command: ./node_modules/.bin/eslint .
+
+  #flow:
+  #  <<: *node_config
+  #  steps:
+  #    - checkout
+  #    - *step_attach_workspace
+  #    - run: *step_setup_config
+  #    - run:
+  #        name: Flow
+  #        command: ./node_modules/.bin/flow check
+
+  check-licenses:
+    <<: *node_config
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run:
+          name: Check licenses
+          command: yarn check-licenses
+
+  yarn_install:
+    <<: *node_config
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - restore_cache:
+          key: *npm_cache_key
+      - run: yarn --frozen-lockfile --network-concurrency 1
+      - save_cache:
+          key: *npm_cache_key
+          paths:
+            - ./node_modules
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - node_modules
+
+  # e2e-tests:
+    # https://github.com/cypress-io/cypress-example-docker-circle
+  #  <<: *node_config
+  #  docker:
+  #    - image: cypress/base:10
+  #  steps:
+  #    - checkout
+  #    - *step_attach_workspace
+  #    - restore_cache:
+  #        name: restore npm cache
+  #        keys:
+  #          - *npm_cache_key
+  #    - run:
+          # TODO: cache cypress executable during yarn install, rather than re-install here
+  #        name: install cypress executable
+  #        command: yarn add cypress --dev
+  #    - run:
+  #        name: setup config
+  #        command: yarn setup-config uk test
+  #    - run:
+  #        name: Start cypress e2e-tests
+  #        command: yarn test-e2e-ci
+  #    - store_artifacts:
+  #        path: cypress/videos
+  #    - store_artifacts:
+  #        path: cypress/screenshots
+
+  bundle_install:
+    <<: *ruby_config
+    steps:
+      - checkout
+      - restore_cache:
+          key: *gem_cache_key
+      - run:
+          name: install bundler
+          command:  gem install bundler --version 2.1.4
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - save_cache:
+          key: *gem_cache_key
+          paths:
+            - ./ios/vendor
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - ios/vendor
+
+  pod_install:
+    <<: *mac_config
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *set_ruby_version
+      - restore_cache:
+          key: *pod_specs_cache_key
+      - run:
+          name: Update pods specs
+          command: |
+            if [[ ! -d "$HOME/.cocoapods/repos/master" ]]; then
+              if [[ "$CIRCLE_BRANCH" == "master" ]] || [[ "$CIRCLE_BRANCH" == "develop" ]] || [[ "$CIRCLE_BRANCH" =~ (release.*) ]] || [[ "$CIRCLE_PULL_REQUEST" ]]; then
+                curl https://cocoapods-specs.circleci.com/fetch-cocoapods-repo-from-s3.sh | bash -s cf
+                # Temporary fix for casing issue
+                # https://github.com/CocoaPods/CocoaPods/issues/7586
+                cd ~/.cocoapods/repos/master && git remote set-url origin https://github.com/CocoaPods/Specs.git && echo "Updated remote URL"
+              fi
+            fi
+      - save_cache:
+          key: *pod_specs_cache_key
+          paths:
+            - ~/.cocoapods/repos/master
+      - restore_cache:
+          key: *pod_cache_key
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - run:
+          name: Install CocoaPods
+          command: cd ios && ../scripts/run-if.sh --ifbuild --ifpr ../scripts/better-pod-install.sh
+      - save_cache:
+          key: *pod_cache_key
+          paths:
+            - ./ios/Pods
+
+  build_ios_beta:
+    <<: *mac_config
+    environment:
+      FL_OUTPUT_DIR: $CIRCLE_WORKING_DIRECTORY
+      TERM: xterm-256color
+      BUNDLE_APP_CONFIG: *bundle_config_path
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *set_ruby_version
+      - restore_cache:
+          key: *pod_cache_key
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - restore_cache:
+          key: *ipa_cache_key
+      - run: brew install watchman
+      - run: *step_fastlane_build_beta
+      - save_cache:
+          key: *ipa_cache_key
+          paths:
+            - artifacts/archives
+      - store_artifacts:
+          path: artifacts/executables
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - artifacts/executables
+
+  build_and_release_ios_rc:
+    <<: *mac_config
+    environment:
+      FL_OUTPUT_DIR: $CIRCLE_WORKING_DIRECTORY
+      TERM: xterm-256color
+      BUNDLE_APP_CONFIG: *bundle_config_path
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *set_ruby_version
+      - restore_cache:
+          key: *pod_cache_key
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - restore_cache:
+          key: *ipa_cache_key
+      - run: brew install watchman
+      - run: *step_fastlane_build_and_release_to_testflight
+      - save_cache:
+          key: *ipa_cache_key
+          paths:
+            - artifacts/archives
+      - store_artifacts:
+          path: artifacts/executables
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - artifacts/executables
+
+  build_ios_beta_uk:
+    <<: *mac_config
+    environment:
+      FL_OUTPUT_DIR: $CIRCLE_WORKING_DIRECTORY
+      TERM: xterm-256color
+      BUNDLE_APP_CONFIG: *bundle_config_path
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *set_ruby_version
+      - restore_cache:
+          key: *pod_cache_key
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - restore_cache:
+          key: *ipa_cache_key_uk
+      - run: brew install watchman
+      - run: *step_fastlane_build_beta_uk
+      - save_cache:
+          key: *ipa_cache_key_uk
+          paths:
+            - artifacts/archives
+      - store_artifacts:
+          path: artifacts/executables
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - artifacts/executables
+
+  build_and_release_android:
+    docker:
+      - image: circleci/android:api-27-node8-alpha
+    environment:
+      TERM: xterm-256color
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      BUNDLE_APP_CONFIG: *bundle_config_path
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *set_ruby_version
+      - restore_cache:
+          keys:
+            - v2_gradle_cache-{{ .Branch }}
+            - v2_gradle_cache-
+      - run:
+          name: install bundler
+          command:  gem install bundler --version 2.1.4
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - run: *step_store_google_play_key
+      - run: *step_fastlane_build_and_release_to_play_store
+      - run: *step_remove_google_play_key
+      - save_cache:
+          key: v2_gradle_cache-{{ .Branch }}
+          paths:
+            - ~/.gradle
+      - store_artifacts:
+          path: artifacts/executables
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - artifacts/executables
+
+  build_android_beta:
+    docker:
+      - image: circleci/android:api-27-node8-alpha
+    environment:
+      TERM: xterm-256color
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      BUNDLE_APP_CONFIG: *bundle_config_path
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *set_ruby_version
+      - restore_cache:
+          keys:
+            - v2_gradle_cache-{{ .Branch }}
+            - v2_gradle_cache-
+      - run:
+          name: install bundler
+          command:  gem install bundler --version 2.1.4
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - run: *step_build_android
+      - save_cache:
+          key: v2_gradle_cache-{{ .Branch }}
+          paths:
+            - ~/.gradle
+      - store_artifacts:
+          path: artifacts/executables
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - artifacts/executables
+
+  build_android_beta_uk:
+    docker:
+      - image: circleci/android:api-27-node8-alpha
+    environment:
+      TERM: xterm-256color
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      BUNDLE_APP_CONFIG: *bundle_config_path
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run: *set_ruby_version
+      - restore_cache:
+          keys:
+            - v2_gradle_cache-{{ .Branch }}
+            - v2_gradle_cache-
+      - run:
+          name: install bundler
+          command:  gem install bundler --version 2.1.4
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - run: *step_build_android_uk
+      - save_cache:
+          key: v2_gradle_cache-{{ .Branch }}
+          paths:
+            - ~/.gradle
+      - store_artifacts:
+          path: artifacts/executables
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - artifacts/executables
+
+  deploy_ios_beta:
+    <<: *ruby_config
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run:
+          name: install bundler
+          command:  gem install bundler --version 2.1.4
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - run:
+          name: Deploy MinDoktor Beta IOS to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifdevelop bundle exec fastlane upload_to_appcenter app_name:"MinDoktor_BETA_IOS" destinations:"Collaborators,MinDoktor_Beta_Testers" file:"../artifacts/executables/mindoktor.ipa"
+      - run:
+          name: Deploy MinDoktor RC IOS to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifrelease bundle exec fastlane upload_to_appcenter app_name:"MinDoktor_RC_IOS" destinations:"Collaborators,MinDoktor_RC_Testers" file:"../artifacts/executables/mindoktor.ipa"
+      - run:
+          name: Deploy MinDoktor PR IOS to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifpr bundle exec fastlane upload_to_appcenter app_name:"MinDoktor_PR_IOS" destinations:"Collaborators,MinDoktor_PR_Testers" file:"../artifacts/executables/mindoktor.ipa"
+
+  deploy_ios_beta_uk:
+    <<: *ruby_config
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run:
+          name: install bundler
+          command:  gem install bundler --version 2.1.4
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - run:
+          name: Deploy UK Beta IOS to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifdevelop bundle exec fastlane upload_to_appcenter app_name:"DoclyUK_BETA_IOS" destinations:"Collaborators,DoclyUK_Beta_Testers" file:"../artifacts/executables/doclyuk.ipa"
+      - run:
+          name: Deploy UK RC IOS to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifrelease bundle exec fastlane upload_to_appcenter app_name:"DoclyUK_RC_IOS" destinations:"Collaborators,DoclyUK_RC_Testers" file:"../artifacts/executables/doclyuk.ipa"
+      - run:
+          name: Deploy UK PR IOS to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifpr bundle exec fastlane upload_to_appcenter app_name:"DoclyUK_PR_IOS" destinations:"Collaborators,DoclyUK_PR_Testers" file:"../artifacts/executables/doclyuk.ipa"
+
+  deploy_android_beta:
+    <<: *ruby_config
+    steps:
+      - checkout
+      - *step_attach_workspace
+      - run:
+          name: install bundler
+          command:  gem install bundler --version 2.1.4
+      - run: cd ios && ../scripts/run-if.sh --ifbuild --ifpr bundle install --frozen --path=vendor/bundle
+      - run:
+          name: Deploy MinDoktor Beta Android to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifdevelop bundle exec fastlane upload_to_appcenter app_name:"MinDoktor_BETA_Android" destinations:"Collaborators,MinDoktor_Beta_Testers" file:"../artifacts/executables/mindoktor.apk"
+      - run:
+          name: Deploy MinDoktor RC Android to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifrelease bundle exec fastlane upload_to_appcenter app_name:"MinDoktor_RC_Android" destinations:"Collaborators,MinDoktor_RC_Testers" file:"../artifacts/executables/mindoktor.apk"
+      - run:
+          name: Deploy MinDoktor PR Android to Appcenter
+          command: cd ios && ../scripts/run-if.sh --ifpr bundle exec fastlane upload_to_appcenter app_name:"MinDoktor_PR_Android" destinations:"Collaborators,MinDoktor_PR_Testers" file:"../artifacts/executables/mindoktor.apk"
+
+  deploy_android_beta_uk:
+    <<: *ruby_config
+    steps:
+      - checkout
+      - run:
+          name: install bundler
+          command:  gem install bundler --version 2.1.4
+      - *step_attach_workspace
+      - run:
+          name: Deploy DoclyUK Beta Android to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifdevelop bundle exec fastlane upload_to_appcenter app_name:"DoclyUK_BETA_Android" destinations:"Collaborators,DoclyUK_Beta_Testers" file:"../artifacts/executables/doclyuk.apk"
+      - run:
+          name: Deploy DoclyUK RC Android to AppCenter
+          command: cd ios && ../scripts/run-if.sh --ifrelease bundle exec fastlane upload_to_appcenter app_name:"DoclyUK_RC_Android" destinations:"Collaborators,DoclyUK_RC_Testers" file:"../artifacts/executables/doclyuk.apk"
+      - run:
+          name: Deploy DoclyUK PR Android to Appcenter
+          command: cd ios && ../scripts/run-if.sh --ifpr bundle exec fastlane upload_to_appcenter app_name:"DoclyUK_PR_Android" destinations:"Collaborators,DoclyUK_PR_Testers" file:"../artifacts/executables/doclyuk.apk"
+
+# NOTE: The jobs that require the NPM_TOKEN env var must be using the org-global context, where
+# shared env vars are defined.
+# https://app.circleci.com/settings/organization/github/mindoktor/contexts
+workflows:
+  version: 2
+  release-ios:
+    when: << pipeline.parameters.release-ios >>
+    jobs:
+      - yarn_install:
+          context: org-global
+      - bundle_install
+      - jest:
+          requires:
+            - yarn_install
+      - lint:
+          requires:
+            - yarn_install
+      - check-licenses:
+          requires:
+            - yarn_install
+      - pod_install:
+          requires:
+            - yarn_install
+            - bundle_install
+      - build_and_release_ios_rc:
+          requires:
+            - yarn_install
+            - jest
+            - lint
+            - bundle_install
+            - pod_install
+
+  release-android:
+    when: << pipeline.parameters.release-android >>
+    jobs:
+      - yarn_install:
+          context: org-global
+      - bundle_install
+      - jest:
+          requires:
+            - yarn_install
+      - lint:
+          requires:
+            - yarn_install
+      - check-licenses:
+          requires:
+            - yarn_install
+      - build_and_release_android:
+          requires:
+            - yarn_install
+            - jest
+            - lint
+            - bundle_install
+
+  main:
+    when:
+      and:
+        - not: << pipeline.parameters.release-ios >>
+        - not: << pipeline.parameters.release-android >>
+    jobs:
+      - yarn_install:
+          context: org-global
+      - jest:
+          requires:
+            - yarn_install
+      #- flow:
+      #    requires:
+      #      - yarn_install
+      - lint:
+          requires:
+            - yarn_install
+      - check-licenses:
+          requires:
+            - yarn_install
+      # - e2e-tests:
+      #    requires:
+      #      - yarn_install
+      #    filters:
+      #      branches:
+      #        only:
+      #          - *cypress_branch
+      - bundle_install:
+          filters:
+            branches:
+              only:
+                - *app_branch_regex
+                - *app_uk_branch_regex
+      - pod_install:
+          filters:
+            branches:
+              only:
+                - *app_branch_regex
+                - *app_uk_branch_regex
+          requires:
+            - yarn_install
+            - bundle_install
+      - build_ios_beta:
+          filters:
+            branches:
+              only:
+                - *app_branch_regex
+          requires:
+            - yarn_install
+            - jest
+            #- flow
+            - lint
+            - bundle_install
+            - pod_install
+      - build_ios_beta_uk:
+          filters:
+            branches:
+              only:
+                - *app_uk_branch_regex
+          requires:
+            - yarn_install
+            - jest
+            #- flow
+            - lint
+            - bundle_install
+            - pod_install
+      - build_android_beta:
+          filters:
+            branches:
+              only:
+                - *app_branch_regex
+          requires:
+            - yarn_install
+            - jest
+            #- flow
+            - lint
+            - bundle_install
+      - build_android_beta_uk:
+          filters:
+            branches:
+              only:
+              - *app_uk_branch_regex
+          requires:
+            - yarn_install
+            - jest
+            #- flow
+            - lint
+            - bundle_install
+      - deploy_ios_beta:
+          filters:
+            branches:
+              only:
+                - *app_branch_regex
+          requires:
+            - build_ios_beta
+      - deploy_ios_beta_uk:
+          filters:
+            branches:
+              only:
+                - *app_uk_branch_regex
+          requires:
+            - build_ios_beta_uk
+      - deploy_android_beta:
+          filters:
+            branches:
+              only:
+                - *app_branch_regex
+          requires:
+            - build_android_beta
+      - deploy_android_beta_uk:
+          filters:
+            branches:
+              only:
+                - *app_uk_branch_regex
+          requires:
+            - build_android_beta_uk
